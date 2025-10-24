@@ -1,0 +1,75 @@
+function onEdit(e) {
+  // --- CONFIGURAções ---
+  const CONFIG = {
+    sheets: {
+      prescricao: "Prescrição de Doses",
+      peso: "Registro de Peso"
+    },
+    headers: {
+      prontuario: "PRONTUÁRIO",
+      dataInicio: "DATA_INICIO",
+      doseAdministrada: "DOSE_ADMINISTRADA_mg",
+      dataPeso: "DATA_AFERICAO",
+      peso: "PESO_kg",
+      colPesoReferencia: "PESO_REFERENCIA_kg",
+      colTaxaResultante: "TAXA_RESULTANTE_mg_kg"
+    }
+  };
+  // --------------------
+
+  const planilha = e.source.getActiveSheet();
+  const celulaEditada = e.range;
+
+  if (planilha.getName() !== CONFIG.sheets.prescricao || celulaEditada.getRow() <= 1) return;
+
+  const cabecalhos = planilha.getRange(1, 1, 1, planilha.getLastColumn()).getValues()[0];
+  const indices = {
+    prontuario: cabecalhos.indexOf(CONFIG.headers.prontuario),
+    dataInicio: cabecalhos.indexOf(CONFIG.headers.dataInicio),
+    doseAdministrada: cabecalhos.indexOf(CONFIG.headers.doseAdministrada),
+    pesoReferencia: cabecalhos.indexOf(CONFIG.headers.colPesoReferencia),
+    taxaResultante: cabecalhos.indexOf(CONFIG.headers.colTaxaResultante)
+  };
+
+  if (celulaEditada.getColumn() !== indices.doseAdministrada + 1) return;
+
+  const linhaEditada = celulaEditada.getRow();
+  const prontuario = planilha.getRange(linhaEditada, indices.prontuario + 1).getValue();
+  const dataInicio = new Date(planilha.getRange(linhaEditada, indices.dataInicio + 1).getValue());
+  const doseAdministrada = planilha.getRange(linhaEditada, indices.doseAdministrada + 1).getValue();
+
+  if (!prontuario || !dataInicio.valueOf() || !doseAdministrada) return;
+
+  const abaPeso = e.source.getSheetByName(CONFIG.sheets.peso);
+  if (!abaPeso) return;
+
+  const dadosPeso = abaPeso.getDataRange().getValues();
+  const cabecalhosPeso = dadosPeso.shift();
+  const indiceProntuarioPeso = cabecalhosPeso.indexOf(CONFIG.headers.prontuario);
+  const indiceDataPeso = cabecalhosPeso.indexOf(CONFIG.headers.dataPeso);
+  const indicePeso = cabecalhosPeso.indexOf(CONFIG.headers.peso);
+  
+  let pesoMaisRecente = null;
+
+  const pesosAnteriores = dadosPeso.map(linha => ({
+    prontuario: linha[indiceProntuarioPeso],
+    data: new Date(linha[indiceDataPeso]),
+    peso: linha[indicePeso]
+  })).filter(p => p.prontuario == prontuario && p.data <= dataInicio);
+  
+  if (pesosAnteriores.length > 0) {
+    pesosAnteriores.sort((a, b) => b.data - a.data);
+    pesoMaisRecente = pesosAnteriores[0];
+  }
+  
+  if (pesoMaisRecente && pesoMaisRecente.peso > 0) {
+    const taxaResultante = doseAdministrada / pesoMaisRecente.peso;
+    
+    // Preenche as células de resultado com a formatação correta
+    planilha.getRange(linhaEditada, indices.pesoReferencia + 1).setValue(pesoMaisRecente.peso).setNumberFormat("0.000"); // <-- CORREÇÃO APLICADA AQUI
+    planilha.getRange(linhaEditada, indices.taxaResultante + 1).setValue(taxaResultante).setNumberFormat("0.00");
+  
+  } else {
+    planilha.getRange(linhaEditada, indices.taxaResultante + 1).setValue("Peso não encontrado");
+  }
+}
